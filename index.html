@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M-600 Desk Reservation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; }
+
+  header {
+    background: #1a1a2e;
+    color: white;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  header h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: 0.02em; }
+  header .subtitle { font-size: 0.85rem; opacity: 0.7; margin-top: 2px; }
+  .legend {
+    display: flex; gap: 20px; font-size: 0.8rem; align-items: center;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch {
+    width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.15);
+  }
+
+  .app-container {
+    display: flex;
+    max-width: 1400px;
+    margin: 24px auto;
+    gap: 24px;
+    padding: 0 24px;
+  }
+
+  .floor-plan-wrapper {
+    flex: 1;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    padding: 24px;
+    overflow: auto;
+  }
+  .floor-plan-wrapper h2 {
+    font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: #444;
+  }
+
+  .sidebar {
+    width: 300px;
+    flex-shrink: 0;
+  }
+  .sidebar-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .sidebar-card h3 {
+    font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; color: #333;
+  }
+  .reservation-list {
+    list-style: none; font-size: 0.85rem;
+  }
+  .reservation-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .reservation-list li:last-child { border-bottom: none; }
+  .reservation-list .desk-label { font-weight: 600; color: #1a1a2e; }
+  .reservation-list .person-name { color: #555; }
+  .reservation-list .clear-btn {
+    background: none; border: none; color: #c0392b; cursor: pointer;
+    font-size: 0.8rem; padding: 2px 6px; border-radius: 4px;
+  }
+  .reservation-list .clear-btn:hover { background: #fdecea; }
+  .empty-state { color: #999; font-size: 0.85rem; font-style: italic; }
+
+  /* SVG floor plan styles */
+  svg { display: block; }
+
+  .room-wall { fill: none; stroke: #333; stroke-width: 2; }
+  .room-fill { fill: #f8f9fa; stroke: #ccc; stroke-width: 1.5; }
+  .partition { stroke: #aaa; stroke-width: 1.2; fill: none; }
+  .partition-thick { stroke: #888; stroke-width: 2; fill: none; }
+
+  .desk {
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .desk rect, .desk path {
+    transition: all 0.15s ease;
+  }
+  .desk:hover rect { filter: brightness(0.9); }
+  .desk.available rect { fill: #d4edda; stroke: #28a745; stroke-width: 1.5; }
+  .desk.reserved rect { fill: #fff3cd; stroke: #e6a817; stroke-width: 1.5; }
+  .desk.available:hover rect { fill: #b7dfbf; }
+  .desk.reserved:hover rect { fill: #ffe69c; }
+
+  .desk-id {
+    font-size: 9px; fill: #333; font-weight: 600;
+    pointer-events: none; text-anchor: middle; dominant-baseline: central;
+  }
+  .desk-person {
+    font-size: 7px; fill: #555;
+    pointer-events: none; text-anchor: middle; dominant-baseline: central;
+  }
+
+  .area-label {
+    font-size: 11px; fill: #666; font-weight: 600;
+    text-anchor: middle; dominant-baseline: central;
+    pointer-events: none; letter-spacing: 0.05em;
+  }
+  .area-label-sm {
+    font-size: 9px; fill: #888; font-weight: 500;
+    text-anchor: middle; dominant-baseline: central;
+    pointer-events: none;
+  }
+  .office-label {
+    font-size: 9px; fill: #555; font-weight: 600;
+    text-anchor: middle; dominant-baseline: central;
+    pointer-events: none;
+  }
+  .room-label {
+    font-size: 10px; fill: #777; font-weight: 600;
+    text-anchor: middle; dominant-baseline: central;
+    pointer-events: none; letter-spacing: 0.03em;
+  }
+
+  .chair {
+    fill: #ddd; stroke: #bbb; stroke-width: 0.8;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 12px;
+    padding: 28px;
+    width: 360px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    animation: modalIn 0.2s ease;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal h3 { font-size: 1.1rem; margin-bottom: 4px; }
+  .modal .modal-sub { font-size: 0.85rem; color: #666; margin-bottom: 16px; }
+  .modal label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: #333; }
+  .modal input[type="text"] {
+    width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 8px;
+    font-size: 0.95rem; outline: none; transition: border-color 0.15s;
+  }
+  .modal input[type="text"]:focus { border-color: #4a90d9; }
+  .modal .btn-row { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+  .modal .btn {
+    padding: 9px 20px; border: none; border-radius: 8px; font-size: 0.9rem;
+    cursor: pointer; font-weight: 600; transition: all 0.15s;
+  }
+  .btn-primary { background: #1a1a2e; color: white; }
+  .btn-primary:hover { background: #2d2d4e; }
+  .btn-secondary { background: #eee; color: #333; }
+  .btn-secondary:hover { background: #ddd; }
+  .btn-danger { background: #c0392b; color: white; }
+  .btn-danger:hover { background: #a93226; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; }
+  .stat-box {
+    flex: 1; text-align: center; padding: 12px 8px;
+    background: #f8f9fa; border-radius: 8px;
+  }
+  .stat-num { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+  .stat-label { font-size: 0.7rem; color: #888; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  @media (max-width: 960px) {
+    .app-container { flex-direction: column; }
+    .sidebar { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>M-600 Desk Reservation</h1>
+    <div class="subtitle">University of Chicago &mdash; Open Office Area</div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4edda;border-color:#28a745;"></div> Available</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fff3cd;border-color:#e6a817;"></div> Reserved</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#e9ecef;border-color:#aaa;"></div> Other areas</div>
+  </div>
+</header>
+
+<div class="app-container">
+  <div class="floor-plan-wrapper">
+    <h2>Floor Plan &mdash; Click a desk to reserve or release it</h2>
+    <svg id="floorplan" viewBox="0 0 680 910" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Outer walls (L-shape: top-right corner cutout) -->
+      <polygon points="10,30 570,30 570,120 670,120 670,900 10,900" class="room-wall" fill="white" stroke-width="3"/>
+
+      <!-- ====== LEFT SIDE: CUBICLE AREA ====== -->
+      <!-- Section divider line -->
+      <line x1="395" y1="30" x2="395" y2="900" stroke="#bbb" stroke-width="1" stroke-dasharray="6,3"/>
+      <!-- Top-right cutout label -->
+      <rect x="573" y="33" width="94" height="84" fill="#f0f0f0" stroke="none"/>
+      <text x="620" y="70" class="area-label-sm" style="font-size:9px;fill:#bbb;">Not in</text>
+      <text x="620" y="83" class="area-label-sm" style="font-size:9px;fill:#bbb;">contract</text>
+
+      <!-- Row labels -->
+
+      <!-- === CLUSTER A (67"H) === -->
+      <line x1="10" y1="35" x2="230" y2="35" class="partition-thick"/>
+
+      <g class="desk available" data-desk="A1" onclick="openModal('A1')">
+        <rect x="15" y="40" width="100" height="50" rx="3"/>
+        <text x="65" y="60" class="desk-id">A1</text>
+        <text x="65" y="73" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="A2" onclick="openModal('A2')">
+        <rect x="125" y="40" width="100" height="50" rx="3"/>
+        <text x="175" y="60" class="desk-id">A2</text>
+        <text x="175" y="73" class="desk-person"></text>
+      </g>
+
+      <!-- === CLUSTER B (53"H) === -->
+      <g class="desk available" data-desk="B1" onclick="openModal('B1')">
+        <rect x="15" y="115" width="100" height="50" rx="3"/>
+        <text x="65" y="135" class="desk-id">B1</text>
+        <text x="65" y="148" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="B2" onclick="openModal('B2')">
+        <rect x="125" y="115" width="100" height="50" rx="3"/>
+        <text x="175" y="135" class="desk-id">B2</text>
+        <text x="175" y="148" class="desk-person"></text>
+      </g>
+
+      <line x1="10" y1="170" x2="230" y2="170" class="partition-thick"/>
+
+      <g class="desk available" data-desk="B4" onclick="openModal('B4')">
+        <rect x="15" y="175" width="100" height="50" rx="3"/>
+        <text x="65" y="195" class="desk-id">B4</text>
+        <text x="65" y="208" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="B5" onclick="openModal('B5')">
+        <rect x="125" y="175" width="100" height="50" rx="3"/>
+        <text x="175" y="195" class="desk-id">B5</text>
+        <text x="175" y="208" class="desk-person"></text>
+      </g>
+
+      <!-- === CLUSTER C (single row of 2) === -->
+      <g class="desk available" data-desk="C1" onclick="openModal('C1')">
+        <rect x="15" y="250" width="100" height="50" rx="3"/>
+        <text x="65" y="270" class="desk-id">C1</text>
+        <text x="65" y="283" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="C2" onclick="openModal('C2')">
+        <rect x="125" y="250" width="100" height="50" rx="3"/>
+        <text x="175" y="270" class="desk-id">C2</text>
+        <text x="175" y="283" class="desk-person"></text>
+      </g>
+
+      <!-- === CLUSTER D (67"H) === -->
+      <g class="desk available" data-desk="D1" onclick="openModal('D1')">
+        <rect x="15" y="338" width="100" height="50" rx="3"/>
+        <text x="65" y="358" class="desk-id">D1</text>
+        <text x="65" y="371" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="D2" onclick="openModal('D2')">
+        <rect x="125" y="338" width="100" height="50" rx="3"/>
+        <text x="175" y="358" class="desk-id">D2</text>
+        <text x="175" y="371" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="D3" onclick="openModal('D3')">
+        <rect x="235" y="338" width="100" height="100" rx="3"/>
+        <text x="285" y="383" class="desk-id">D3</text>
+        <text x="285" y="396" class="desk-person"></text>
+      </g>
+
+      <line x1="10" y1="393" x2="230" y2="393" class="partition-thick"/>
+
+      <g class="desk available" data-desk="D4" onclick="openModal('D4')">
+        <rect x="15" y="398" width="100" height="50" rx="3"/>
+        <text x="65" y="418" class="desk-id">D4</text>
+        <text x="65" y="431" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="D5" onclick="openModal('D5')">
+        <rect x="125" y="398" width="100" height="50" rx="3"/>
+        <text x="175" y="418" class="desk-id">D5</text>
+        <text x="175" y="431" class="desk-person"></text>
+      </g>
+      <line x1="230" y1="443" x2="340" y2="443" class="partition-thick"/>
+      <g class="desk available" data-desk="D6" onclick="openModal('D6')">
+        <rect x="235" y="448" width="100" height="50" rx="3"/>
+        <text x="285" y="468" class="desk-id">D6</text>
+        <text x="285" y="481" class="desk-person"></text>
+      </g>
+
+      <!-- === CLUSTER E (53"H) === -->
+      <g class="desk available" data-desk="E1" onclick="openModal('E1')">
+        <rect x="15" y="535" width="100" height="50" rx="3"/>
+        <text x="65" y="555" class="desk-id">E1</text>
+        <text x="65" y="568" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="E2" onclick="openModal('E2')">
+        <rect x="125" y="535" width="100" height="50" rx="3"/>
+        <text x="175" y="555" class="desk-id">E2</text>
+        <text x="175" y="568" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="E3" onclick="openModal('E3')">
+        <rect x="235" y="535" width="100" height="50" rx="3"/>
+        <text x="285" y="555" class="desk-id">E3</text>
+        <text x="285" y="568" class="desk-person"></text>
+      </g>
+
+      <line x1="10" y1="590" x2="340" y2="590" class="partition-thick"/>
+
+      <g class="desk available" data-desk="E4" onclick="openModal('E4')">
+        <rect x="15" y="595" width="100" height="50" rx="3"/>
+        <text x="65" y="615" class="desk-id">E4</text>
+        <text x="65" y="628" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="E5" onclick="openModal('E5')">
+        <rect x="125" y="595" width="100" height="50" rx="3"/>
+        <text x="175" y="615" class="desk-id">E5</text>
+        <text x="175" y="628" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="E6" onclick="openModal('E6')">
+        <rect x="235" y="595" width="100" height="50" rx="3"/>
+        <text x="285" y="615" class="desk-id">E6</text>
+        <text x="285" y="628" class="desk-person"></text>
+      </g>
+
+      <!-- === CLUSTER F (53"H) === -->
+      <g class="desk available" data-desk="F1" onclick="openModal('F1')">
+        <rect x="15" y="670" width="100" height="50" rx="3"/>
+        <text x="65" y="690" class="desk-id">F1</text>
+        <text x="65" y="703" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="F2" onclick="openModal('F2')">
+        <rect x="125" y="670" width="100" height="50" rx="3"/>
+        <text x="175" y="690" class="desk-id">F2</text>
+        <text x="175" y="703" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="F3" onclick="openModal('F3')">
+        <rect x="235" y="670" width="100" height="50" rx="3"/>
+        <text x="285" y="690" class="desk-id">F3</text>
+        <text x="285" y="703" class="desk-person"></text>
+      </g>
+
+      <line x1="10" y1="725" x2="340" y2="725" class="partition-thick"/>
+
+      <g class="desk available" data-desk="F4" onclick="openModal('F4')">
+        <rect x="15" y="730" width="100" height="50" rx="3"/>
+        <text x="65" y="750" class="desk-id">F4</text>
+        <text x="65" y="763" class="desk-person"></text>
+      </g>
+      <g class="desk available" data-desk="F5" onclick="openModal('F5')">
+        <rect x="125" y="730" width="100" height="50" rx="3"/>
+        <text x="175" y="750" class="desk-id">F5</text>
+        <text x="175" y="763" class="desk-person"></text>
+      </g>
+
+      <!-- ====== CENTER AREAS ====== -->
+
+
+      <!-- Conference / Touchdown Area -->
+      <rect x="15" y="800" width="320" height="100" rx="4" fill="#e8eaf6" stroke="#9fa8da" stroke-width="1.5"/>
+      <text x="285" y="843" class="room-label" style="fill:#283593;">Conference</text>
+      <text x="285" y="858" class="room-label" style="fill:#283593;">Area</text>
+      <!-- Conference table U-shape (open side facing left, centered) -->
+      <!-- Top arm -->
+      <rect x="115" y="815" width="120" height="14" rx="3" fill="#c5cae9" stroke="#7986cb" stroke-width="1"/>
+      <!-- Right side (connects top and bottom) -->
+      <rect x="221" y="815" width="14" height="60" rx="3" fill="#c5cae9" stroke="#7986cb" stroke-width="1"/>
+      <!-- Bottom arm -->
+      <rect x="115" y="861" width="120" height="14" rx="3" fill="#c5cae9" stroke="#7986cb" stroke-width="1"/>
+
+      <!-- Lounge (under F3) -->
+      <rect x="235" y="730" width="100" height="50" rx="4" fill="#fff3e0" stroke="#ffb74d" stroke-width="1.5"/>
+      <text x="285" y="760" class="room-label" style="fill:#e65100;">LOUNGE</text>
+
+
+      <!-- ====== RIGHT SIDE ====== -->
+
+      <!-- Kitchen & Copy + Bike Storage (L-shaped, stacked vertically) -->
+      <polygon points="460,33 565,33 565,120 660,120 660,325 460,325" fill="#e8f4fd" stroke="#90caf9" stroke-width="1.5"/>
+      <!-- Bike storage (narrower upper portion) -->
+      <text x="512" y="70" class="area-label-sm" style="fill:#64b5f6;">BIKE</text>
+      <text x="512" y="83" class="area-label-sm" style="fill:#64b5f6;">STORAGE</text>
+      <line x1="460" y1="120" x2="660" y2="120" stroke="#90caf9" stroke-width="1" stroke-dasharray="4,3"/>
+      <!-- Kitchen & Copy (same width as offices) -->
+      <text x="560" y="200" class="room-label" style="fill:#1976d2;">KITCHEN</text>
+      <text x="560" y="220" class="area-label-sm" style="fill:#64b5f6;">& Copy</text>
+
+      <!-- Office M603 - Dr. Torcasso -->
+      <rect x="460" y="325" width="200" height="115" rx="4" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
+      <text x="560" y="370" class="office-label" style="font-size:10px;">Dr. Madelaine</text>
+      <text x="560" y="385" class="office-label" style="font-size:10px;">Torcasso</text>
+      <text x="560" y="405" class="area-label-sm">Office M603</text>
+
+      <!-- Phone Booth 1 (between Torcasso & Parker) -->
+      <rect x="410" y="425" width="45" height="45" rx="4" fill="#fce4ec" stroke="#ef9a9a" stroke-width="1.5"/>
+      <text x="432" y="446" class="room-label" style="fill:#c62828;font-size:7px;">PHONE</text>
+      <text x="432" y="456" class="room-label" style="fill:#c62828;font-size:7px;">BOOTH</text>
+
+      <!-- Office M605 - Dr. Parker -->
+      <rect x="460" y="440" width="200" height="115" rx="4" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
+      <text x="560" y="488" class="office-label" style="font-size:10px;">Dr. William</text>
+      <text x="560" y="503" class="office-label" style="font-size:10px;">Parker</text>
+      <text x="560" y="523" class="area-label-sm">Office M605</text>
+
+      <!-- Office M607 - Dr. Beaulieu-Jones -->
+      <rect x="460" y="555" width="200" height="115" rx="4" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
+      <text x="560" y="600" class="office-label" style="font-size:10px;">Dr. Brett</text>
+      <text x="560" y="615" class="office-label" style="font-size:10px;">Beaulieu-Jones</text>
+      <text x="560" y="635" class="area-label-sm">Office M607</text>
+
+      <!-- Phone Booth 2 (between Beaulieu-Jones & Howard) -->
+      <rect x="410" y="655" width="45" height="45" rx="4" fill="#fce4ec" stroke="#ef9a9a" stroke-width="1.5"/>
+      <text x="432" y="676" class="room-label" style="fill:#c62828;font-size:7px;">PHONE</text>
+      <text x="432" y="686" class="room-label" style="fill:#c62828;font-size:7px;">BOOTH</text>
+
+      <!-- Office M609 - Dr. Howard -->
+      <rect x="460" y="670" width="200" height="115" rx="4" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
+      <text x="560" y="718" class="office-label" style="font-size:10px;">Dr. Frederick</text>
+      <text x="560" y="733" class="office-label" style="font-size:10px;">Howard</text>
+      <text x="560" y="753" class="area-label-sm">Office M609</text>
+
+      <!-- Office M611 - Dr. Pearson -->
+      <rect x="460" y="785" width="200" height="115" rx="4" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
+      <text x="560" y="830" class="office-label" style="font-size:10px;">Dr. Alexander</text>
+      <text x="560" y="845" class="office-label" style="font-size:10px;">Pearson</text>
+      <text x="560" y="865" class="area-label-sm">Office M611</text>
+
+
+
+    </svg>
+  </div>
+
+  <div class="sidebar">
+    <div class="sidebar-card">
+      <h3>Status</h3>
+      <div class="stats">
+        <div class="stat-box">
+          <div class="stat-num" id="availCount">25</div>
+          <div class="stat-label">Available</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" id="resCount">0</div>
+          <div class="stat-label">Reserved</div>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-card">
+      <h3>Current Reservations</h3>
+      <ul class="reservation-list" id="resList">
+        <li class="empty-state">No reservations yet</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Reservation Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Reserve Desk</h3>
+    <div class="modal-sub" id="modalSub">Enter your name to reserve this desk.</div>
+    <div id="reserveForm">
+      <label for="nameInput">Your Name</label>
+      <input type="text" id="nameInput" placeholder="e.g. Jane Smith" autocomplete="off"/>
+    </div>
+    <div class="btn-row" id="modalBtns"></div>
+  </div>
+</div>
+
+<script>
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxoV-HsMlHZpa9zIts-gi4IL2FO7HFSF_cXcrUgoqmsYheuVAFCfi5QhHFrRfO9w6vh/exec';
+  const reservations = {};
+  let currentDesk = null;
+  let isSyncing = false;
+
+  // Load reservations from Google Sheets on page load
+  async function loadReservations() {
+    try {
+      document.getElementById('availCount').textContent = '...';
+      document.getElementById('resCount').textContent = '...';
+      const response = await fetch(APPS_SCRIPT_URL);
+      const data = await response.json();
+      // Clear and repopulate
+      Object.keys(reservations).forEach(k => delete reservations[k]);
+      Object.assign(reservations, data);
+      updateUI();
+    } catch (err) {
+      console.error('Failed to load reservations:', err);
+    }
+  }
+
+  // Save a reservation to Google Sheets
+  async function saveToSheet(action, desk, name) {
+    try {
+      isSyncing = true;
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action, desk, name }),
+        headers: { 'Content-Type': 'text/plain' }
+      });
+      isSyncing = false;
+    } catch (err) {
+      console.error('Failed to save:', err);
+      isSyncing = false;
+    }
+  }
+
+  function openModal(deskId) {
+    currentDesk = deskId;
+    const overlay = document.getElementById('modalOverlay');
+    const title = document.getElementById('modalTitle');
+    const sub = document.getElementById('modalSub');
+    const form = document.getElementById('reserveForm');
+    const btns = document.getElementById('modalBtns');
+    const input = document.getElementById('nameInput');
+
+    if (reservations[deskId]) {
+      title.textContent = `Desk ${deskId}`;
+      sub.textContent = `Currently reserved by ${reservations[deskId]}.`;
+      form.style.display = 'none';
+      btns.innerHTML = `
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+        <button class="btn btn-danger" onclick="releaseDesk()">Release Desk</button>
+      `;
+    } else {
+      title.textContent = `Reserve Desk ${deskId}`;
+      sub.textContent = 'Enter your name to reserve this desk.';
+      form.style.display = 'block';
+      input.value = '';
+      btns.innerHTML = `
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="reserveDesk()">Reserve</button>
+      `;
+      setTimeout(() => input.focus(), 100);
+    }
+    overlay.classList.add('active');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('active');
+    currentDesk = null;
+  }
+
+  async function reserveDesk() {
+    const name = document.getElementById('nameInput').value.trim();
+    if (!name) {
+      document.getElementById('nameInput').style.borderColor = '#e74c3c';
+      document.getElementById('nameInput').placeholder = 'Please enter your name';
+      return;
+    }
+    const desk = currentDesk;
+    reservations[desk] = name;
+    updateUI();
+    closeModal();
+    await saveToSheet('reserve', desk, name);
+  }
+
+  async function releaseDesk() {
+    const desk = currentDesk;
+    delete reservations[desk];
+    updateUI();
+    closeModal();
+    await saveToSheet('release', desk);
+  }
+
+  async function releaseDeskById(deskId) {
+    delete reservations[deskId];
+    updateUI();
+    await saveToSheet('release', deskId);
+  }
+
+  function updateUI() {
+    // Update desk visuals
+    document.querySelectorAll('[data-desk]').forEach(desk => {
+      const id = desk.dataset.desk;
+      const personText = desk.querySelector('.desk-person');
+      if (reservations[id]) {
+        desk.classList.remove('available');
+        desk.classList.add('reserved');
+        personText.textContent = reservations[id].length > 12
+          ? reservations[id].substring(0, 11) + '…'
+          : reservations[id];
+      } else {
+        desk.classList.remove('reserved');
+        desk.classList.add('available');
+        personText.textContent = '';
+      }
+    });
+
+    // Update sidebar stats
+    const totalDesks = 25;
+    const resCount = Object.keys(reservations).length;
+    document.getElementById('resCount').textContent = resCount;
+    document.getElementById('availCount').textContent = totalDesks - resCount;
+
+    // Update reservation list
+    const list = document.getElementById('resList');
+    const entries = Object.entries(reservations).sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length === 0) {
+      list.innerHTML = '<li class="empty-state">No reservations yet</li>';
+    } else {
+      list.innerHTML = entries.map(([desk, name]) =>
+        `<li>
+          <span><span class="desk-label">${desk}</span> &mdash; <span class="person-name">${name}</span></span>
+          <button class="clear-btn" onclick="releaseDeskById('${desk}')" title="Release">&#10005;</button>
+        </li>`
+      ).join('');
+    }
+  }
+
+  // Close modal on overlay click
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // Enter key submits
+  document.getElementById('nameInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') reserveDesk();
+    this.style.borderColor = '#ddd';
+  });
+
+  // ESC closes modal
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Load data on startup
+  loadReservations();
+
+  // Auto-refresh every 30 seconds to pick up other users' changes
+  setInterval(loadReservations, 30000);
+</script>
+</body>
+</html>

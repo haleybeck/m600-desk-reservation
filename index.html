@@ -61,6 +61,29 @@
   .sidebar-card h3 {
     font-size: 0.95rem; font-weight: 600; margin-bottom: 12px; color: #333;
   }
+  .next-avail-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 0.82rem;
+  }
+  .next-avail-desk {
+    font-weight: 700; color: #1a1a2e; min-width: 28px;
+  }
+  .next-avail-bar-bg {
+    flex: 1; background: #eee; border-radius: 6px; height: 22px; position: relative; overflow: hidden;
+  }
+  .next-avail-bar-fill {
+    height: 100%; border-radius: 6px; background: linear-gradient(90deg, #ff7043, #ffab91);
+    position: absolute; left: 0; top: 0; transition: width 0.4s ease;
+  }
+  .next-avail-bar-text {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #333; z-index: 1;
+  }
+  .next-avail-time {
+    font-size: 11px; color: #666; min-width: 58px; text-align: right;
+  }
+  .next-avail-note {
+    font-size: 12px; color: #999; font-style: italic; margin-top: 4px;
+  }
   .reservation-list {
     list-style: none; font-size: 0.85rem;
   }
@@ -466,6 +489,10 @@
         </div>
       </div>
     </div>
+    <div class="sidebar-card" id="nextAvailCard" style="display:none;">
+      <h3>Next Available Desks</h3>
+      <div id="nextAvailTimeline"></div>
+    </div>
     <div class="sidebar-card">
       <h3>Current Reservations</h3>
       <ul class="reservation-list" id="resList">
@@ -483,6 +510,16 @@
     <div id="reserveForm">
       <label for="nameInput">Your Name</label>
       <input type="text" id="nameInput" placeholder="e.g. Jane Smith" autocomplete="off"/>
+      <div style="display:flex;gap:12px;margin-top:10px;">
+        <div style="flex:1;">
+          <label for="startTime">Start Time</label>
+          <input type="time" id="startTime" style="width:100%;padding:8px 10px;border:2px solid #ddd;border-radius:8px;font-size:14px;"/>
+        </div>
+        <div style="flex:1;">
+          <label for="endTime">End Time</label>
+          <input type="time" id="endTime" style="width:100%;padding:8px 10px;border:2px solid #ddd;border-radius:8px;font-size:14px;"/>
+        </div>
+      </div>
     </div>
     <div class="btn-row" id="modalBtns"></div>
   </div>
@@ -511,12 +548,12 @@
   }
 
   // Save a reservation to Google Sheets
-  async function saveToSheet(action, desk, name) {
+  async function saveToSheet(action, desk, name, startTime, endTime) {
     try {
       isSyncing = true;
       await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ action, desk, name }),
+        body: JSON.stringify({ action, desk, name, startTime, endTime }),
         headers: { 'Content-Type': 'text/plain' }
       });
       isSyncing = false;
@@ -524,6 +561,15 @@
       console.error('Failed to save:', err);
       isSyncing = false;
     }
+  }
+
+  function formatTime(t) {
+    if (!t) return '';
+    const [h, m] = t.split(':');
+    const hr = parseInt(h);
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    const hr12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+    return `${hr12}:${m} ${ampm}`;
   }
 
   function openModal(deskId) {
@@ -536,8 +582,12 @@
     const input = document.getElementById('nameInput');
 
     if (reservations[deskId]) {
+      const r = reservations[deskId];
+      const timeStr = (r.startTime && r.endTime)
+        ? ` (${formatTime(r.startTime)} - ${formatTime(r.endTime)})`
+        : '';
       title.textContent = `Desk ${deskId}`;
-      sub.textContent = `Currently reserved by ${reservations[deskId]}.`;
+      sub.textContent = `Currently reserved by ${r.name}.${timeStr}`;
       form.style.display = 'none';
       btns.innerHTML = `
         <button class="btn btn-secondary" onclick="closeModal()">Close</button>
@@ -545,9 +595,11 @@
       `;
     } else {
       title.textContent = `Reserve Desk ${deskId}`;
-      sub.textContent = 'Enter your name to reserve this desk.';
+      sub.textContent = 'Enter your name and time to reserve this desk.';
       form.style.display = 'block';
       input.value = '';
+      document.getElementById('startTime').value = '';
+      document.getElementById('endTime').value = '';
       btns.innerHTML = `
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="reserveDesk()">Reserve</button>
@@ -570,10 +622,12 @@
       return;
     }
     const desk = currentDesk;
-    reservations[desk] = name;
+    const startTime = document.getElementById('startTime').value;
+    const endTime = document.getElementById('endTime').value;
+    reservations[desk] = { name, startTime, endTime };
     updateUI();
     closeModal();
-    await saveToSheet('reserve', desk, name);
+    await saveToSheet('reserve', desk, name, startTime, endTime);
   }
 
   async function releaseDesk() {
@@ -596,11 +650,13 @@
       const id = desk.dataset.desk;
       const personText = desk.querySelector('.desk-person');
       if (reservations[id]) {
+        const r = reservations[id];
+        const displayName = typeof r === 'string' ? r : r.name;
         desk.classList.remove('available');
         desk.classList.add('reserved');
-        personText.textContent = reservations[id].length > 12
-          ? reservations[id].substring(0, 11) + '…'
-          : reservations[id];
+        personText.textContent = displayName.length > 12
+          ? displayName.substring(0, 11) + '…'
+          : displayName;
       } else {
         desk.classList.remove('reserved');
         desk.classList.add('available');
@@ -620,13 +676,85 @@
     if (entries.length === 0) {
       list.innerHTML = '<li class="empty-state">No reservations yet</li>';
     } else {
-      list.innerHTML = entries.map(([desk, name]) =>
-        `<li>
-          <span><span class="desk-label">${desk}</span> &mdash; <span class="person-name">${name}</span></span>
+      list.innerHTML = entries.map(([desk, r]) => {
+        const name = typeof r === 'string' ? r : r.name;
+        const timeStr = (r.startTime && r.endTime)
+          ? `<span style="font-size:11px;color:#888;display:block;">${formatTime(r.startTime)} - ${formatTime(r.endTime)}</span>`
+          : '';
+        return `<li>
+          <span><span class="desk-label">${desk}</span> &mdash; <span class="person-name">${name}</span>${timeStr}</span>
           <button class="clear-btn" onclick="releaseDeskById('${desk}')" title="Release">&#10005;</button>
-        </li>`
-      ).join('');
+        </li>`;
+      }).join('');
     }
+
+    // Update "Next Available Desks" visualization
+    updateNextAvailable();
+  }
+
+  function updateNextAvailable() {
+    const card = document.getElementById('nextAvailCard');
+    const container = document.getElementById('nextAvailTimeline');
+    const totalDesks = 25;
+    const resCount = Object.keys(reservations).length;
+    const availCount = totalDesks - resCount;
+
+    // Only show when most desks are booked (75%+ reserved)
+    if (resCount < Math.ceil(totalDesks * 0.75)) {
+      card.style.display = 'none';
+      return;
+    }
+
+    card.style.display = 'block';
+
+    // Gather desks with end times, sorted by soonest
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const upcoming = [];
+    for (const [desk, r] of Object.entries(reservations)) {
+      if (r.endTime) {
+        const [h, m] = r.endTime.split(':').map(Number);
+        const endMin = h * 60 + m;
+        if (endMin > currentMinutes) {
+          const minsLeft = endMin - currentMinutes;
+          upcoming.push({ desk, name: r.name, endTime: r.endTime, minsLeft });
+        }
+      }
+    }
+
+    upcoming.sort((a, b) => a.minsLeft - b.minsLeft);
+
+    if (upcoming.length === 0 && availCount === 0) {
+      container.innerHTML = '<div class="next-avail-note">No end times set — desks may not free up today.</div>';
+      return;
+    }
+
+    if (upcoming.length === 0) {
+      card.style.display = 'none';
+      return;
+    }
+
+    // Show up to 5 soonest
+    const maxMins = Math.max(...upcoming.map(u => u.minsLeft), 60);
+    const shown = upcoming.slice(0, 5);
+
+    container.innerHTML = shown.map(u => {
+      const pct = Math.min((u.minsLeft / maxMins) * 100, 100);
+      const label = u.minsLeft < 60
+        ? `${u.minsLeft} min`
+        : `${Math.floor(u.minsLeft / 60)}h ${u.minsLeft % 60}m`;
+      return `<div class="next-avail-row">
+        <span class="next-avail-desk">${u.desk}</span>
+        <div class="next-avail-bar-bg">
+          <div class="next-avail-bar-fill" style="width:${pct}%"></div>
+          <div class="next-avail-bar-text">${u.name} — ${label} left</div>
+        </div>
+        <span class="next-avail-time">${formatTime(u.endTime)}</span>
+      </div>`;
+    }).join('') + (availCount > 0
+      ? `<div class="next-avail-note">${availCount} desk${availCount > 1 ? 's' : ''} currently available</div>`
+      : `<div class="next-avail-note">Next desk frees up at ${formatTime(shown[0].endTime)}</div>`);
   }
 
   // Close modal on overlay click

@@ -201,6 +201,26 @@
   .btn-danger { background: #c0392b; color: white; }
   .btn-danger:hover { background: #a93226; }
 
+  .days-grid {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+  }
+  .day-chip {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 34px;
+    border: 2px solid #ddd; border-radius: 8px;
+    font-size: 0.78rem; font-weight: 600; color: #666;
+    cursor: pointer; user-select: none;
+    transition: all 0.15s ease;
+  }
+  .day-chip:hover { border-color: #aaa; background: #f5f5f5; }
+  .day-chip.selected { background: #1a1a2e; color: white; border-color: #1a1a2e; }
+  .day-chip.selected:hover { background: #2d2d4e; border-color: #2d2d4e; }
+  .day-tag {
+    display: inline-block; background: #e8eaf6; color: #333;
+    font-size: 10px; font-weight: 600; padding: 2px 6px;
+    border-radius: 4px; margin-right: 3px;
+  }
+
   .stats { display: flex; gap: 12px; margin-bottom: 16px; }
   .stat-box {
     flex: 1; text-align: center; padding: 12px 8px;
@@ -510,6 +530,16 @@
     <div id="reserveForm">
       <label for="nameInput">Your Name</label>
       <input type="text" id="nameInput" placeholder="e.g. Jane Smith" autocomplete="off"/>
+      <div style="margin-top:10px;">
+        <label>Days of the Week</label>
+        <div class="days-grid" id="daysGrid">
+          <div class="day-chip" data-day="Mon" onclick="toggleDay(this)">Mon</div>
+          <div class="day-chip" data-day="Tue" onclick="toggleDay(this)">Tue</div>
+          <div class="day-chip" data-day="Wed" onclick="toggleDay(this)">Wed</div>
+          <div class="day-chip" data-day="Thu" onclick="toggleDay(this)">Thu</div>
+          <div class="day-chip" data-day="Fri" onclick="toggleDay(this)">Fri</div>
+        </div>
+      </div>
       <div style="display:flex;gap:12px;margin-top:10px;">
         <div style="flex:1;">
           <label for="startTime">Start Time</label>
@@ -547,13 +577,26 @@
     }
   }
 
+  function toggleDay(el) {
+    el.classList.toggle('selected');
+  }
+
+  function getSelectedDays() {
+    return Array.from(document.querySelectorAll('#daysGrid .day-chip.selected'))
+      .map(el => el.dataset.day);
+  }
+
+  function clearSelectedDays() {
+    document.querySelectorAll('#daysGrid .day-chip').forEach(el => el.classList.remove('selected'));
+  }
+
   // Save a reservation to Google Sheets
-  async function saveToSheet(action, desk, name, startTime, endTime) {
+  async function saveToSheet(action, desk, name, startTime, endTime, days) {
     try {
       isSyncing = true;
       await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ action, desk, name, startTime, endTime }),
+        body: JSON.stringify({ action, desk, name, startTime, endTime, days }),
         headers: { 'Content-Type': 'text/plain' }
       });
       isSyncing = false;
@@ -596,8 +639,11 @@
       const timeStr = (r.startTime && r.endTime)
         ? ` (${formatTime(r.startTime)} - ${formatTime(r.endTime)})`
         : '';
+      const daysStr = (r.days && r.days.length > 0)
+        ? ` | Days: ${r.days.join(', ')}`
+        : '';
       title.textContent = `Desk ${deskId}`;
-      sub.textContent = `Currently reserved by ${r.name}.${timeStr}`;
+      sub.textContent = `Currently reserved by ${r.name}.${timeStr}${daysStr}`;
       form.style.display = 'none';
       btns.innerHTML = `
         <button class="btn btn-secondary" onclick="closeModal()">Close</button>
@@ -608,6 +654,7 @@
       sub.textContent = 'Enter your name and time to reserve this desk.';
       form.style.display = 'block';
       input.value = '';
+      clearSelectedDays();
       document.getElementById('startTime').value = '';
       document.getElementById('endTime').value = '';
       btns.innerHTML = `
@@ -632,12 +679,13 @@
       return;
     }
     const desk = currentDesk;
+    const days = getSelectedDays();
     const startTime = document.getElementById('startTime').value;
     const endTime = document.getElementById('endTime').value;
-    reservations[desk] = { name, startTime, endTime };
+    reservations[desk] = { name, days, startTime, endTime };
     updateUI();
     closeModal();
-    await saveToSheet('reserve', desk, name, startTime, endTime);
+    await saveToSheet('reserve', desk, name, startTime, endTime, days);
   }
 
   async function releaseDesk() {
@@ -691,8 +739,11 @@
         const timeStr = (r.startTime && r.endTime)
           ? `<span style="font-size:11px;color:#888;display:block;">${formatTime(r.startTime)} - ${formatTime(r.endTime)}</span>`
           : '';
+        const daysStr = (r.days && r.days.length > 0)
+          ? `<span style="display:block;margin-top:2px;">${r.days.map(d => `<span class="day-tag">${d}</span>`).join('')}</span>`
+          : '';
         return `<li>
-          <span><span class="desk-label">${desk}</span> &mdash; <span class="person-name">${name}</span>${timeStr}</span>
+          <span><span class="desk-label">${desk}</span> &mdash; <span class="person-name">${name}</span>${timeStr}${daysStr}</span>
           <button class="clear-btn" onclick="releaseDeskById('${desk}')" title="Release">&#10005;</button>
         </li>`;
       }).join('');

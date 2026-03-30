@@ -122,8 +122,10 @@
   .desk:hover rect { filter: brightness(0.9); }
   .desk.available rect { fill: #d4edda; stroke: #28a745; stroke-width: 1.5; }
   .desk.reserved rect { fill: #fff3cd; stroke: #e6a817; stroke-width: 1.5; }
+  .desk.partial rect { fill: #d6eaf8; stroke: #5dade2; stroke-width: 1.5; }
   .desk.available:hover rect { fill: #b7dfbf; }
   .desk.reserved:hover rect { fill: #ffe69c; }
+  .desk.partial:hover rect { fill: #aed6f1; }
 
   .desk-id {
     font-size: 9px; fill: #333; font-weight: 600;
@@ -173,7 +175,9 @@
     background: white;
     border-radius: 12px;
     padding: 28px;
-    width: 360px;
+    width: 400px;
+    max-height: 90vh;
+    overflow-y: auto;
     box-shadow: 0 8px 30px rgba(0,0,0,0.2);
     animation: modalIn 0.2s ease;
   }
@@ -221,6 +225,30 @@
     border-radius: 4px; margin-right: 3px;
   }
 
+  .existing-reservations { margin-bottom: 16px; }
+  .existing-reservations h4 { font-size: 0.82rem; color: #666; margin-bottom: 8px; font-weight: 600; }
+  .existing-res-card {
+    background: #f8f9fa; border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 6px; display: flex; justify-content: space-between; align-items: flex-start;
+    border: 1px solid #eee;
+  }
+  .existing-res-card .res-info { flex: 1; }
+  .existing-res-card .res-name { font-weight: 600; font-size: 0.85rem; color: #1a1a2e; }
+  .existing-res-card .res-details { font-size: 0.75rem; color: #666; margin-top: 2px; }
+  .existing-res-card .res-remove {
+    background: none; border: none; color: #c0392b; cursor: pointer;
+    font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 8px; white-space: nowrap;
+  }
+  .existing-res-card .res-remove:hover { background: #fdecea; }
+  .conflict-alert {
+    background: #fdecea; color: #c0392b; font-size: 0.82rem; font-weight: 600;
+    padding: 8px 12px; border-radius: 8px; margin-top: 10px; display: none;
+    border: 1px solid #f5c6cb;
+  }
+  .form-divider {
+    border: none; border-top: 1px solid #eee; margin: 16px 0 12px;
+  }
+
   .stats { display: flex; gap: 12px; margin-bottom: 16px; }
   .stat-box {
     flex: 1; text-align: center; padding: 12px 8px;
@@ -244,7 +272,8 @@
   </div>
   <div class="legend">
     <div class="legend-item"><div class="legend-swatch" style="background:#d4edda;border-color:#28a745;"></div> Available</div>
-    <div class="legend-item"><div class="legend-swatch" style="background:#fff3cd;border-color:#e6a817;"></div> Reserved</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d6eaf8;border-color:#5dade2;"></div> Partial</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fff3cd;border-color:#e6a817;"></div> Fully Booked</div>
     <div class="legend-item"><div class="legend-swatch" style="background:#e9ecef;border-color:#aaa;"></div> Other areas</div>
   </div>
 </header>
@@ -527,6 +556,11 @@
   <div class="modal">
     <h3 id="modalTitle">Reserve Desk</h3>
     <div class="modal-sub" id="modalSub">Enter your name to reserve this desk.</div>
+    <div id="existingReservations" class="existing-reservations" style="display:none;">
+      <h4>Current Reservations</h4>
+      <div id="existingResList"></div>
+    </div>
+    <hr class="form-divider" id="formDivider" style="display:none;"/>
     <div id="reserveForm">
       <label for="nameInput">Your Name</label>
       <input type="text" id="nameInput" placeholder="e.g. Jane Smith" autocomplete="off"/>
@@ -550,6 +584,7 @@
           <input type="time" id="endTime" style="width:100%;padding:8px 10px;border:2px solid #ddd;border-radius:8px;font-size:14px;"/>
         </div>
       </div>
+      <div class="conflict-alert" id="conflictAlert"></div>
     </div>
     <div class="btn-row" id="modalBtns"></div>
   </div>
@@ -557,60 +592,76 @@
 
 <script>
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxoV-HsMlHZpa9zIts-gi4IL2FO7HFSF_cXcrUgoqmsYheuVAFCfi5QhHFrRfO9w6vh/exec';
+  const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+  // reservations: { deskId: [ { id, name, days, startTime, endTime }, ... ], ... }
   const reservations = {};
   let currentDesk = null;
   let isSyncing = false;
 
-  // Load reservations from Google Sheets on page load
+  // ── Load from Google Sheets ──
   async function loadReservations() {
     try {
       document.getElementById('availCount').textContent = '...';
       document.getElementById('resCount').textContent = '...';
       const response = await fetch(APPS_SCRIPT_URL);
       const data = await response.json();
-      // Clear and repopulate
       Object.keys(reservations).forEach(k => delete reservations[k]);
-      Object.assign(reservations, data);
+      // data is { deskId: [ {id,name,days,startTime,endTime}, ... ], ... }
+      for (const [desk, arr] of Object.entries(data)) {
+        reservations[desk] = Array.isArray(arr) ? arr : [arr];
+      }
       updateUI();
     } catch (err) {
       console.error('Failed to load reservations:', err);
     }
   }
 
-  function toggleDay(el) {
-    el.classList.toggle('selected');
-  }
-
-  function getSelectedDays() {
-    return Array.from(document.querySelectorAll('#daysGrid .day-chip.selected'))
-      .map(el => el.dataset.day);
-  }
-
-  function clearSelectedDays() {
-    document.querySelectorAll('#daysGrid .day-chip').forEach(el => el.classList.remove('selected'));
-  }
-
-  // Save a reservation to Google Sheets
-  async function saveToSheet(action, desk, name, startTime, endTime, days) {
+  // ── Save to Google Sheets ──
+  async function saveToSheet(action, desk, name, startTime, endTime, days, id) {
     try {
       isSyncing = true;
-      await fetch(APPS_SCRIPT_URL, {
+      const resp = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ action, desk, name, startTime, endTime, days }),
+        body: JSON.stringify({ action, desk, name, startTime, endTime, days, id }),
         headers: { 'Content-Type': 'text/plain' }
       });
+      const result = await resp.json();
       isSyncing = false;
+
+      // Server-side conflict detected — undo the local optimistic update
+      if (result.status === 'conflict') {
+        // Remove the optimistically added reservation
+        if (reservations[desk]) {
+          reservations[desk] = reservations[desk].filter(r => String(r.id) !== String(id));
+          if (reservations[desk].length === 0) delete reservations[desk];
+        }
+        // Reload fresh data and alert user
+        await loadReservations();
+        alert(`Schedule conflict! ${result.conflictWith} already has this desk reserved for an overlapping time. Please choose different days or times.`);
+      }
     } catch (err) {
       console.error('Failed to save:', err);
       isSyncing = false;
     }
   }
 
+  // ── Day chip helpers ──
+  function toggleDay(el) { el.classList.toggle('selected'); }
+
+  function getSelectedDays() {
+    return Array.from(document.querySelectorAll('#daysGrid .day-chip.selected')).map(el => el.dataset.day);
+  }
+
+  function clearSelectedDays() {
+    document.querySelectorAll('#daysGrid .day-chip').forEach(el => el.classList.remove('selected'));
+  }
+
+  // ── Time helpers ──
   function formatTime(t) {
     if (!t) return '';
-    // Handle various formats: "HH:MM", "HH:MM:SS", or Date strings from Google Sheets
     let hr, mn;
-    if (t.includes('T') || t.includes('GMT') || t.includes('Z')) {
+    if (String(t).includes('T') || String(t).includes('GMT') || String(t).includes('Z')) {
       const d = new Date(t);
       hr = d.getHours();
       mn = String(d.getMinutes()).padStart(2, '0');
@@ -625,6 +676,69 @@
     return `${hr12}:${mn} ${ampm}`;
   }
 
+  function timeToMinutes(t) {
+    if (!t) return null;
+    const s = String(t);
+    let hr, mn;
+    // Handle Google Sheets date strings like "Sat Dec 30 1899 09:00:00 GMT-0600"
+    if (s.includes('T') || s.includes('GMT') || s.includes('Z') || s.match(/\d{4}/)) {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        hr = d.getHours();
+        mn = d.getMinutes();
+      }
+    }
+    // Handle "HH:MM" or "HH:MM:SS"
+    if (hr === undefined) {
+      const parts = s.split(':');
+      hr = parseInt(parts[0]);
+      mn = parseInt(parts[1] || 0);
+    }
+    if (isNaN(hr) || isNaN(mn)) return null;
+    return hr * 60 + mn;
+  }
+
+  // ── Conflict detection ──
+  function safeMinutes(val, fallback) {
+    const m = timeToMinutes(val);
+    return (m !== null && !isNaN(m)) ? m : fallback;
+  }
+
+  function hasConflict(deskId, newDays, newStart, newEnd) {
+    const existing = reservations[deskId] || [];
+    const nDays = (newDays && newDays.length > 0) ? newDays : ALL_DAYS;
+    const nStart = safeMinutes(newStart, 0);
+    const nEnd = safeMinutes(newEnd, 1439);
+
+    for (const r of existing) {
+      const eDays = (r.days && r.days.length > 0) ? r.days : ALL_DAYS;
+      const eStart = safeMinutes(r.startTime, 0);
+      const eEnd = safeMinutes(r.endTime, 1439);
+
+      // Check if they share any day
+      const sharedDays = nDays.filter(d => eDays.includes(d));
+      if (sharedDays.length === 0) continue;
+
+      // Check time overlap: two ranges overlap if each starts before the other ends
+      if (nStart < eEnd && eStart < nEnd) {
+        return { conflict: true, with: r, sharedDays };
+      }
+    }
+    return { conflict: false };
+  }
+
+  // ── Get booked days for a desk ──
+  function getBookedDays(deskId) {
+    const arr = reservations[deskId] || [];
+    const days = new Set();
+    arr.forEach(r => {
+      const d = (r.days && r.days.length > 0) ? r.days : ALL_DAYS;
+      d.forEach(day => days.add(day));
+    });
+    return days;
+  }
+
+  // ── Modal ──
   function openModal(deskId) {
     currentDesk = deskId;
     const overlay = document.getElementById('modalOverlay');
@@ -633,36 +747,52 @@
     const form = document.getElementById('reserveForm');
     const btns = document.getElementById('modalBtns');
     const input = document.getElementById('nameInput');
+    const existingSection = document.getElementById('existingReservations');
+    const existingList = document.getElementById('existingResList');
+    const divider = document.getElementById('formDivider');
+    const conflictAlert = document.getElementById('conflictAlert');
 
-    if (reservations[deskId]) {
-      const r = reservations[deskId];
-      const timeStr = (r.startTime && r.endTime)
-        ? ` (${formatTime(r.startTime)} - ${formatTime(r.endTime)})`
-        : '';
-      const daysStr = (r.days && r.days.length > 0)
-        ? ` | Days: ${r.days.join(', ')}`
-        : '';
-      title.textContent = `Desk ${deskId}`;
-      sub.textContent = `Currently reserved by ${r.name}.${timeStr}${daysStr}`;
-      form.style.display = 'none';
-      btns.innerHTML = `
-        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-        <button class="btn btn-danger" onclick="releaseDesk()">Release Desk</button>
-      `;
+    conflictAlert.style.display = 'none';
+    const deskRes = reservations[deskId] || [];
+
+    title.textContent = `Desk ${deskId}`;
+
+    if (deskRes.length > 0) {
+      // Show existing reservations
+      existingSection.style.display = 'block';
+      divider.style.display = 'block';
+      sub.textContent = `${deskRes.length} reservation${deskRes.length > 1 ? 's' : ''} — add another or release existing.`;
+      existingList.innerHTML = deskRes.map(r => {
+        const timeStr = (r.startTime && r.endTime) ? `${formatTime(r.startTime)} – ${formatTime(r.endTime)}` : 'All day';
+        const dayTags = (r.days && r.days.length > 0)
+          ? r.days.map(d => `<span class="day-tag">${d}</span>`).join('')
+          : '<span class="day-tag">All days</span>';
+        return `<div class="existing-res-card">
+          <div class="res-info">
+            <div class="res-name">${r.name}</div>
+            <div class="res-details">${dayTags} &nbsp; ${timeStr}</div>
+          </div>
+          <button class="res-remove" onclick="releaseById('${deskId}','${r.id}')">Remove</button>
+        </div>`;
+      }).join('');
     } else {
-      title.textContent = `Reserve Desk ${deskId}`;
+      existingSection.style.display = 'none';
+      divider.style.display = 'none';
       sub.textContent = 'Enter your name and time to reserve this desk.';
-      form.style.display = 'block';
-      input.value = '';
-      clearSelectedDays();
-      document.getElementById('startTime').value = '';
-      document.getElementById('endTime').value = '';
-      btns.innerHTML = `
-        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="reserveDesk()">Reserve</button>
-      `;
-      setTimeout(() => input.focus(), 100);
     }
+
+    // Always show the form for adding a new reservation
+    form.style.display = 'block';
+    input.value = '';
+    clearSelectedDays();
+    document.getElementById('startTime').value = '';
+    document.getElementById('endTime').value = '';
+
+    btns.innerHTML = `
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="reserveDesk()">Add Reservation</button>
+    `;
+    setTimeout(() => input.focus(), 100);
     overlay.classList.add('active');
   }
 
@@ -671,71 +801,162 @@
     currentDesk = null;
   }
 
+  // ── Reserve ──
   async function reserveDesk() {
     const name = document.getElementById('nameInput').value.trim();
+    const conflictAlert = document.getElementById('conflictAlert');
+    conflictAlert.style.display = 'none';
+
     if (!name) {
       document.getElementById('nameInput').style.borderColor = '#e74c3c';
       document.getElementById('nameInput').placeholder = 'Please enter your name';
       return;
     }
+
     const desk = currentDesk;
     const days = getSelectedDays();
     const startTime = document.getElementById('startTime').value;
     const endTime = document.getElementById('endTime').value;
-    reservations[desk] = { name, days, startTime, endTime };
+
+    // Refresh data from server to catch reservations made by other users
+    try {
+      const response = await fetch(APPS_SCRIPT_URL);
+      const freshData = await response.json();
+      Object.keys(reservations).forEach(k => delete reservations[k]);
+      for (const [d, arr] of Object.entries(freshData)) {
+        reservations[d] = Array.isArray(arr) ? arr : [arr];
+      }
+      updateUI();
+    } catch (err) {
+      console.error('Failed to refresh before saving:', err);
+    }
+
+    // Conflict check against fresh data
+    const check = hasConflict(desk, days, startTime, endTime);
+    if (check.conflict) {
+      const daysLabel = check.sharedDays.join(', ');
+      const existingTime = (check.with.startTime && check.with.endTime)
+        ? ` from ${formatTime(check.with.startTime)} to ${formatTime(check.with.endTime)}`
+        : ' (all day)';
+      conflictAlert.innerHTML = `<strong>Schedule conflict!</strong> ${check.with.name} already has this desk on ${daysLabel}${existingTime}. Please choose different days or adjust your times.`;
+      conflictAlert.style.display = 'block';
+
+      // Refresh the existing-reservations cards in the modal
+      const deskRes = reservations[desk] || [];
+      if (deskRes.length > 0) {
+        document.getElementById('existingReservations').style.display = 'block';
+        document.getElementById('formDivider').style.display = 'block';
+        document.getElementById('modalSub').textContent = `${deskRes.length} reservation${deskRes.length > 1 ? 's' : ''} — add another or release existing.`;
+        document.getElementById('existingResList').innerHTML = deskRes.map(r => {
+          const ts = (r.startTime && r.endTime) ? `${formatTime(r.startTime)} – ${formatTime(r.endTime)}` : 'All day';
+          const dt = (r.days && r.days.length > 0)
+            ? r.days.map(d => `<span class="day-tag">${d}</span>`).join('')
+            : '<span class="day-tag">All days</span>';
+          return `<div class="existing-res-card">
+            <div class="res-info">
+              <div class="res-name">${r.name}</div>
+              <div class="res-details">${dt} &nbsp; ${ts}</div>
+            </div>
+            <button class="res-remove" onclick="releaseById('${desk}','${r.id}')">Remove</button>
+          </div>`;
+        }).join('');
+      }
+      return;
+    }
+
+    const id = String(Date.now());
+    if (!reservations[desk]) reservations[desk] = [];
+    reservations[desk].push({ id, name, days, startTime, endTime });
+
     updateUI();
     closeModal();
-    await saveToSheet('reserve', desk, name, startTime, endTime, days);
+    await saveToSheet('reserve', desk, name, startTime, endTime, days, id);
   }
 
-  async function releaseDesk() {
-    const desk = currentDesk;
-    delete reservations[desk];
+  // ── Release by reservation ID ──
+  async function releaseById(deskId, resId) {
+    const arr = reservations[deskId];
+    if (arr) {
+      reservations[deskId] = arr.filter(r => String(r.id) !== String(resId));
+      if (reservations[deskId].length === 0) delete reservations[deskId];
+    }
     updateUI();
-    closeModal();
-    await saveToSheet('release', desk);
+    // Re-open modal to refresh list (if it's the current desk)
+    if (currentDesk === deskId) {
+      openModal(deskId);
+    }
+    await saveToSheet('release', deskId, null, null, null, null, resId);
   }
 
-  async function releaseDeskById(deskId) {
-    delete reservations[deskId];
+  // ── Release from sidebar ──
+  async function releaseSidebarRes(deskId, resId) {
+    const arr = reservations[deskId];
+    if (arr) {
+      reservations[deskId] = arr.filter(r => String(r.id) !== String(resId));
+      if (reservations[deskId].length === 0) delete reservations[deskId];
+    }
     updateUI();
-    await saveToSheet('release', deskId);
+    await saveToSheet('release', deskId, null, null, null, null, resId);
   }
 
+  // ── Update UI ──
   function updateUI() {
+    const totalDesks = 25;
+
     // Update desk visuals
-    document.querySelectorAll('[data-desk]').forEach(desk => {
-      const id = desk.dataset.desk;
-      const personText = desk.querySelector('.desk-person');
-      if (reservations[id]) {
-        const r = reservations[id];
-        const displayName = typeof r === 'string' ? r : r.name;
-        desk.classList.remove('available');
-        desk.classList.add('reserved');
-        personText.textContent = displayName.length > 12
-          ? displayName.substring(0, 11) + '…'
-          : displayName;
-      } else {
-        desk.classList.remove('reserved');
-        desk.classList.add('available');
+    document.querySelectorAll('[data-desk]').forEach(deskEl => {
+      const id = deskEl.dataset.desk;
+      const personText = deskEl.querySelector('.desk-person');
+      const arr = reservations[id] || [];
+
+      deskEl.classList.remove('available', 'reserved', 'partial');
+
+      if (arr.length === 0) {
+        deskEl.classList.add('available');
         personText.textContent = '';
+      } else {
+        const bookedDays = getBookedDays(id);
+        const isFullyBooked = ALL_DAYS.every(d => bookedDays.has(d));
+
+        if (isFullyBooked) {
+          deskEl.classList.add('reserved');
+        } else {
+          deskEl.classList.add('partial');
+        }
+
+        if (arr.length === 1) {
+          const displayName = arr[0].name;
+          personText.textContent = displayName.length > 12 ? displayName.substring(0, 11) + '…' : displayName;
+        } else {
+          personText.textContent = `${arr.length} bookings`;
+        }
       }
     });
 
     // Update sidebar stats
-    const totalDesks = 25;
-    const resCount = Object.keys(reservations).length;
-    document.getElementById('resCount').textContent = resCount;
-    document.getElementById('availCount').textContent = totalDesks - resCount;
+    let desksWithRes = 0;
+    let totalRes = 0;
+    for (const [desk, arr] of Object.entries(reservations)) {
+      if (arr.length > 0) {
+        desksWithRes++;
+        totalRes += arr.length;
+      }
+    }
+    document.getElementById('resCount').textContent = desksWithRes;
+    document.getElementById('availCount').textContent = totalDesks - desksWithRes;
 
-    // Update reservation list
+    // Update reservation list (flatten all)
     const list = document.getElementById('resList');
-    const entries = Object.entries(reservations).sort((a, b) => a[0].localeCompare(b[0]));
-    if (entries.length === 0) {
+    const allRes = [];
+    for (const [desk, arr] of Object.entries(reservations)) {
+      arr.forEach(r => allRes.push({ desk, ...r }));
+    }
+    allRes.sort((a, b) => a.desk.localeCompare(b.desk) || a.name.localeCompare(b.name));
+
+    if (allRes.length === 0) {
       list.innerHTML = '<li class="empty-state">No reservations yet</li>';
     } else {
-      list.innerHTML = entries.map(([desk, r]) => {
-        const name = typeof r === 'string' ? r : r.name;
+      list.innerHTML = allRes.map(r => {
         const timeStr = (r.startTime && r.endTime)
           ? `<span style="font-size:11px;color:#888;display:block;">${formatTime(r.startTime)} - ${formatTime(r.endTime)}</span>`
           : '';
@@ -743,13 +964,12 @@
           ? `<span style="display:block;margin-top:2px;">${r.days.map(d => `<span class="day-tag">${d}</span>`).join('')}</span>`
           : '';
         return `<li>
-          <span><span class="desk-label">${desk}</span> &mdash; <span class="person-name">${name}</span>${timeStr}${daysStr}</span>
-          <button class="clear-btn" onclick="releaseDeskById('${desk}')" title="Release">&#10005;</button>
+          <span><span class="desk-label">${r.desk}</span> &mdash; <span class="person-name">${r.name}</span>${timeStr}${daysStr}</span>
+          <button class="clear-btn" onclick="releaseSidebarRes('${r.desk}','${r.id}')" title="Release">&#10005;</button>
         </li>`;
       }).join('');
     }
 
-    // Update "Next Available Desks" visualization
     updateNextAvailable();
   }
 
@@ -757,29 +977,27 @@
     const card = document.getElementById('nextAvailCard');
     const container = document.getElementById('nextAvailTimeline');
     const totalDesks = 25;
-    const resCount = Object.keys(reservations).length;
-    const availCount = totalDesks - resCount;
+    const desksWithRes = Object.keys(reservations).filter(k => reservations[k].length > 0).length;
+    const availCount = totalDesks - desksWithRes;
 
-    // Only show when most desks are booked (75%+ reserved)
-    if (resCount < Math.ceil(totalDesks * 0.75)) {
+    if (desksWithRes < Math.ceil(totalDesks * 0.75)) {
       card.style.display = 'none';
       return;
     }
 
     card.style.display = 'block';
-
-    // Gather desks with end times, sorted by soonest
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const upcoming = [];
-    for (const [desk, r] of Object.entries(reservations)) {
-      if (r.endTime) {
-        const [h, m] = r.endTime.split(':').map(Number);
-        const endMin = h * 60 + m;
-        if (endMin > currentMinutes) {
-          const minsLeft = endMin - currentMinutes;
-          upcoming.push({ desk, name: r.name, endTime: r.endTime, minsLeft });
+    for (const [desk, arr] of Object.entries(reservations)) {
+      for (const r of arr) {
+        if (r.endTime) {
+          const endMin = timeToMinutes(r.endTime);
+          if (endMin !== null && endMin > currentMinutes) {
+            const minsLeft = endMin - currentMinutes;
+            upcoming.push({ desk, name: r.name, endTime: r.endTime, minsLeft });
+          }
         }
       }
     }
@@ -796,7 +1014,6 @@
       return;
     }
 
-    // Show up to 5 soonest
     const maxMins = Math.max(...upcoming.map(u => u.minsLeft), 60);
     const shown = upcoming.slice(0, 5);
 
@@ -818,18 +1035,16 @@
       : `<div class="next-avail-note">Next desk frees up at ${formatTime(shown[0].endTime)}</div>`);
   }
 
-  // Close modal on overlay click
+  // ── Event listeners ──
   document.getElementById('modalOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeModal();
   });
 
-  // Enter key submits
   document.getElementById('nameInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') reserveDesk();
     this.style.borderColor = '#ddd';
   });
 
-  // ESC closes modal
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeModal();
   });
@@ -837,7 +1052,7 @@
   // Load data on startup
   loadReservations();
 
-  // Auto-refresh every 30 seconds to pick up other users' changes
+  // Auto-refresh every 30 seconds
   setInterval(loadReservations, 30000);
 </script>
 </body>

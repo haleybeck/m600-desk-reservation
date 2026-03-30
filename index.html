@@ -565,11 +565,21 @@
 
   function formatTime(t) {
     if (!t) return '';
-    const [h, m] = t.split(':');
-    const hr = parseInt(h);
+    // Handle various formats: "HH:MM", "HH:MM:SS", or Date strings from Google Sheets
+    let hr, mn;
+    if (t.includes('T') || t.includes('GMT') || t.includes('Z')) {
+      const d = new Date(t);
+      hr = d.getHours();
+      mn = String(d.getMinutes()).padStart(2, '0');
+    } else {
+      const parts = String(t).split(':');
+      hr = parseInt(parts[0]);
+      mn = String(parts[1] || '00').padStart(2, '0');
+    }
+    if (isNaN(hr)) return t;
     const ampm = hr >= 12 ? 'PM' : 'AM';
     const hr12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
-    return `${hr12}:${m} ${ampm}`;
+    return `${hr12}:${mn} ${ampm}`;
   }
 
   function openModal(deskId) {

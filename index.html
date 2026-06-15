@@ -980,7 +980,7 @@ function updateNextAvailable() {
   const spacesWithRes = Object.keys(reservations).filter(k => reservations[k].length > 0).length;
   const availCount = TOTAL_SPACES - spacesWithRes;
 
-  if (spacesWithRes < Math.ceil(TOTAL_SPACES * 0.75)) { card.style.display = 'none'; return; }
+  if (spacesWithRes === 0) { card.style.display = 'none'; return; }
 
   card.style.display = 'block';
   const now = new Date();

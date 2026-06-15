@@ -58,6 +58,7 @@
     .next-avail-bar-text { position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #333; z-index: 1; }
     .next-avail-time { font-size: 11px; color: #666; min-width: 58px; text-align: right; }
     .next-avail-note { font-size: 12px; color: #999; font-style: italic; margin-top: 4px; }
+    .next-avail-available { margin-left: auto; color: #28a745; font-weight: 600; font-size: 0.8rem; }
     .reservation-list { list-style: none; font-size: 0.85rem; }
     .reservation-list li { padding: 8px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
     .reservation-list li:last-child { border-bottom: none; }
@@ -1003,10 +1004,19 @@ function updateNextAvailable() {
     }
     if (soonest) upcoming.push({ desk: SPACE_NAMES[desk] || desk, ...soonest });
   }
-
-  if (upcoming.length === 0) { card.style.display = 'none'; return; }
-
   upcoming.sort((a, b) => a.minsLeft - b.minsLeft);
+
+  // Free cubicles (no reservations at all) → "available now"
+  const freeCubicles = [];
+  document.querySelectorAll('[data-desk]').forEach(el => {
+    const id = el.dataset.desk;
+    if (id === 'PB1' || id === 'PB2' || id === 'CONF') return; // cubicles only
+    const arr = reservations[id] || [];
+    if (arr.length === 0) freeCubicles.push(id);
+  });
+  freeCubicles.sort((a, b) => a.localeCompare(b));
+
+  if (upcoming.length === 0 && freeCubicles.length === 0) { card.style.display = 'none'; return; }
   card.style.display = 'block';
 
   const fmtLeft = (m) => {
@@ -1015,9 +1025,20 @@ function updateNextAvailable() {
     return mm ? `${h}h ${mm}m` : `${h}h`;
   };
 
+  // Available-now cubicles first (capped at 8)
+  const freeShown = freeCubicles.slice(0, 8);
+  const freeExtra = freeCubicles.length - freeShown.length;
+  let html = freeShown.map(id => `<div class="next-avail-row">
+      <span class="next-avail-desk">${id}</span>
+      <span class="next-avail-available">available now</span>
+    </div>`).join('');
+  if (freeExtra > 0) {
+    html += `<div class="next-avail-note">+${freeExtra} more available now</div>`;
+  }
+
+  // Then occupied spaces with countdowns
   const maxMins = Math.max(...upcoming.map(u => u.minsLeft), 60);
-  const shown = upcoming.slice(0, 5);
-  container.innerHTML = shown.map(u => {
+  html += upcoming.map(u => {
     const pct = Math.min((u.minsLeft / maxMins) * 100, 100);
     return `<div class="next-avail-row">
       <span class="next-avail-desk">${u.desk}</span>
@@ -1027,7 +1048,12 @@ function updateNextAvailable() {
       </div>
       <span class="next-avail-time">${u.day} ${formatTime(u.endTime)}</span>
     </div>`;
-  }).join('') + `<div class="next-avail-note">Next space frees up ${shown[0].day} at ${formatTime(shown[0].endTime)} (${fmtLeft(shown[0].minsLeft)})</div>`;
+  }).join('');
+
+  if (upcoming.length > 0) {
+    html += `<div class="next-avail-note">Next occupied space frees up ${upcoming[0].day} at ${formatTime(upcoming[0].endTime)} (${fmtLeft(upcoming[0].minsLeft)})</div>`;
+  }
+  container.innerHTML = html;
 }
 
 // ── Event listeners ──

@@ -977,52 +977,57 @@ function updateUI() {
 function updateNextAvailable() {
   const card = document.getElementById('nextAvailCard');
   const container = document.getElementById('nextAvailTimeline');
-  const spacesWithRes = Object.keys(reservations).filter(k => reservations[k].length > 0).length;
-  const availCount = TOTAL_SPACES - spacesWithRes;
 
-  if (spacesWithRes === 0) { card.style.display = 'none'; return; }
-
-  card.style.display = 'block';
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const upcoming = [];
+  const todayName = DAY_NAMES[now.getDay()];
+  const nowMin = now.getHours() * 60 + now.getMinutes();
 
+  // For each desk that is occupied right now, work out when it next frees up.
+  const upcoming = [];
   for (const [desk, arr] of Object.entries(reservations)) {
+    if (!arr || arr.length === 0) continue;
+    let soonest = null;
     for (const r of arr) {
-      if (r.endTime) {
-        const endMin = timeToMinutes(r.endTime);
-        if (endMin !== null && endMin > currentMinutes) {
-          const minsLeft = endMin - currentMinutes;
-          const label = SPACE_NAMES[desk] || desk;
-          upcoming.push({ desk: label, name: r.name, endTime: r.endTime, minsLeft });
-        }
+      const endMin = timeToMinutes(r.endTime);
+      if (endMin === null) continue; // no end time → can't count down
+      const startMin = timeToMinutes(r.startTime);
+      const sMin = (startMin === null ? 0 : startMin);
+      const days = (r.days && r.days.length > 0) ? r.days : ALL_DAYS;
+      const activeNow = days.includes(todayName) && nowMin >= sMin && nowMin < endMin;
+      if (!activeNow) continue;
+      const minsLeft = endMin - nowMin;
+      if (soonest === null || minsLeft < soonest.minsLeft) {
+        soonest = { minsLeft, endTime: r.endTime, day: todayName, name: r.name };
       }
     }
+    if (soonest) upcoming.push({ desk: SPACE_NAMES[desk] || desk, ...soonest });
   }
-  upcoming.sort((a, b) => a.minsLeft - b.minsLeft);
 
-  if (upcoming.length === 0 && availCount === 0) {
-    container.innerHTML = '<div class="next-avail-note">No end times set — spaces may not free up today.</div>';
-    return;
-  }
   if (upcoming.length === 0) { card.style.display = 'none'; return; }
+
+  upcoming.sort((a, b) => a.minsLeft - b.minsLeft);
+  card.style.display = 'block';
+
+  const fmtLeft = (m) => {
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60), mm = m % 60;
+    return mm ? `${h}h ${mm}m` : `${h}h`;
+  };
 
   const maxMins = Math.max(...upcoming.map(u => u.minsLeft), 60);
   const shown = upcoming.slice(0, 5);
   container.innerHTML = shown.map(u => {
     const pct = Math.min((u.minsLeft / maxMins) * 100, 100);
-    const label = u.minsLeft < 60 ? `${u.minsLeft} min` : `${Math.floor(u.minsLeft / 60)}h ${u.minsLeft % 60}m`;
     return `<div class="next-avail-row">
       <span class="next-avail-desk">${u.desk}</span>
       <div class="next-avail-bar-bg">
         <div class="next-avail-bar-fill" style="width:${pct}%"></div>
-        <div class="next-avail-bar-text">${u.name} — ${label} left</div>
+        <div class="next-avail-bar-text">${fmtLeft(u.minsLeft)} left</div>
       </div>
-      <span class="next-avail-time">${formatTime(u.endTime)}</span>
+      <span class="next-avail-time">${u.day} ${formatTime(u.endTime)}</span>
     </div>`;
-  }).join('') + (availCount > 0
-    ? `<div class="next-avail-note">${availCount} space${availCount > 1 ? 's' : ''} currently available</div>`
-    : `<div class="next-avail-note">Next space frees up at ${formatTime(shown[0].endTime)}</div>`);
+  }).join('') + `<div class="next-avail-note">Next space frees up ${shown[0].day} at ${formatTime(shown[0].endTime)} (${fmtLeft(shown[0].minsLeft)})</div>`;
 }
 
 // ── Event listeners ──

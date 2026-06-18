@@ -1219,11 +1219,13 @@ function buildTimeline() {
   const span = rangeEnd - rangeStart;
   const totalHours = maxH - minH;
 
-  // Sort: all-day first, then by start time, then by name
+  // Sort: all-day bookings first (grouped at top), then by start time, then by name
+  const isAllDay = t => (t.start === null || t.end === null);
   todays.sort((a, b) => {
-    const sa = a.start === null ? -1 : a.start;
-    const sb = b.start === null ? -1 : b.start;
-    if (sa !== sb) return sa - sb;
+    const aAll = isAllDay(a), bAll = isAllDay(b);
+    if (aAll !== bAll) return aAll ? -1 : 1;      // all-day group on top
+    if (aAll && bAll) return a.name.localeCompare(b.name);
+    if (a.start !== b.start) return a.start - b.start;
     return a.name.localeCompare(b.name);
   });
 

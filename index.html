@@ -232,9 +232,69 @@
     .stat-box { flex: 1; text-align: center; padding: 12px 8px; background: #f8f9fa; border-radius: 8px; min-width: 60px; }
     .stat-num { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
     .stat-label { font-size: 0.7rem; color: #888; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── View toggle (Floor Plan / Today) ── */
+    .view-toggle { display: flex; background: rgba(255,255,255,0.12); border-radius: 9px; padding: 3px; gap: 2px; }
+    .view-toggle button {
+      background: transparent; color: rgba(255,255,255,0.7); border: none;
+      padding: 7px 18px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: all 0.15s; letter-spacing: 0.01em;
+    }
+    .view-toggle button:hover { color: #fff; }
+    .view-toggle button.active { background: #fff; color: #1a1a2e; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+
+    /* ── Daily timeline view ── */
+    .daily-view-wrapper {
+      flex: 1;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      padding: 24px;
+      overflow: auto;
+    }
+    .daily-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .daily-header h2 { font-size: 1.05rem; font-weight: 600; color: #1a1a2e; }
+    .daily-date { font-size: 0.85rem; color: #888; }
+    .daily-summary { font-size: 0.85rem; color: #555; margin: 6px 0 20px; }
+    .daily-summary strong { color: #1a1a2e; font-weight: 700; }
+
+    .timeline { position: relative; min-width: 560px; --tl-label-w: 170px; }
+    .tl-axis { display: flex; align-items: flex-end; height: 22px; margin-bottom: 6px; }
+    .tl-axis .tl-axis-spacer { width: var(--tl-label-w); flex-shrink: 0; }
+    .tl-axis .tl-axis-track { flex: 1; display: flex; position: relative; }
+    .tl-axis .tl-hour { flex: 1; font-size: 10px; color: #aaa; font-weight: 600; text-align: left; position: relative; transform: translateX(-50%); white-space: nowrap; }
+    .tl-axis .tl-hour:first-child { transform: none; }
+
+    .tl-rows { position: relative; }
+    .tl-row { display: flex; align-items: center; min-height: 40px; padding: 4px 0; border-bottom: 1px solid #f3f3f3; }
+    .tl-row:last-child { border-bottom: none; }
+    .tl-label { width: var(--tl-label-w); flex-shrink: 0; padding-right: 14px; line-height: 1.25; }
+    .tl-name { display: block; font-size: 0.85rem; font-weight: 600; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tl-space { display: block; font-size: 0.72rem; color: #999; }
+    .tl-track { flex: 1; position: relative; height: 30px; border-radius: 6px; }
+    .tl-bar {
+      position: absolute; top: 0; bottom: 0; border-radius: 6px;
+      display: flex; align-items: center; padding: 0 10px;
+      font-size: 11px; font-weight: 600; color: #1a3a1f; white-space: nowrap; overflow: hidden;
+      box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.06);
+    }
+    .tl-bar.desk { background: #d4edda; box-shadow: inset 0 0 0 1.5px #28a745; color: #15662b; }
+    .tl-bar.phonebooth { background: #fce4ec; box-shadow: inset 0 0 0 1.5px #ef9a9a; color: #ad1457; }
+    .tl-bar.conference { background: #e8eaf6; box-shadow: inset 0 0 0 1.5px #9fa8da; color: #3949ab; }
+    .tl-now {
+      position: absolute; top: -24px; bottom: 0; width: 2px; background: #e53935; z-index: 5; pointer-events: none;
+    }
+    .tl-now::before {
+      content: 'now'; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+      background: #e53935; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+    }
+    .daily-empty { text-align: center; color: #999; font-size: 0.95rem; padding: 60px 20px; }
+    .daily-empty .daily-empty-icon { font-size: 2rem; opacity: 0.5; margin-bottom: 10px; }
+
     @media (max-width: 960px) {
       .app-container { flex-direction: column; }
       .sidebar { width: 100%; }
+      .timeline { --tl-label-w: 120px; }
     }
   </style>
 </head>
@@ -244,6 +304,10 @@
   <div>
     <h1>M-600 Desk Reservation</h1>
     <div class="subtitle">University of Chicago &mdash; Open Office Area</div>
+  </div>
+  <div class="view-toggle" role="tablist">
+    <button id="toggleFloor" class="active" onclick="setView('floor')">Floor Plan</button>
+    <button id="toggleDaily" onclick="setView('daily')">Today</button>
   </div>
   <div class="legend">
     <div class="legend-item"><div class="legend-swatch" style="background:#d4edda;border-color:#28a745;"></div> Available</div>
@@ -255,7 +319,7 @@
 
 <div class="app-container">
 
-  <div class="floor-plan-wrapper">
+  <div class="floor-plan-wrapper" id="floorView">
     <h2>Floor Plan &mdash; Click a desk, phone booth, or conference area to reserve</h2>
     <svg id="floorplan" viewBox="0 0 680 990" width="100%" xmlns="http://www.w3.org/2000/svg">
 
@@ -503,6 +567,15 @@
       <text x="560" y="942" class="area-label-sm">Office M611</text>
 
     </svg>
+  </div>
+
+  <div class="daily-view-wrapper" id="dailyView" style="display:none;">
+    <div class="daily-header">
+      <h2>Who&rsquo;s in the office today</h2>
+      <div class="daily-date" id="dailyDate"></div>
+    </div>
+    <div class="daily-summary" id="dailySummary"></div>
+    <div class="timeline" id="timeline"></div>
   </div>
 
   <div class="sidebar">
@@ -973,6 +1046,9 @@ function updateUI() {
   renderResList(document.getElementById('resListConference'), conferenceRes, 'No conference area reservations yet');
 
   updateNextAvailable();
+
+  // Keep the daily timeline in sync when it's the active view
+  if (currentView === 'daily') buildTimeline();
 }
 
 function updateNextAvailable() {
@@ -1054,6 +1130,152 @@ function updateNextAvailable() {
     html += `<div class="next-avail-note">Next occupied space frees up ${upcoming[0].day} at ${formatTime(upcoming[0].endTime)} (${fmtLeft(upcoming[0].minsLeft)})</div>`;
   }
   container.innerHTML = html;
+}
+
+// ── Daily timeline view ──
+let currentView = 'floor';
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_FULL = { Sun: 'Sunday', Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday' };
+
+function setView(view) {
+  currentView = view;
+  const floor = document.getElementById('floorView');
+  const daily = document.getElementById('dailyView');
+  const isDaily = view === 'daily';
+  floor.style.display = isDaily ? 'none' : 'block';
+  daily.style.display = isDaily ? 'block' : 'none';
+  document.getElementById('toggleFloor').classList.toggle('active', !isDaily);
+  document.getElementById('toggleDaily').classList.toggle('active', isDaily);
+  if (isDaily) buildTimeline();
+}
+
+// Bar CSS class by space type
+function spaceBarClass(deskId) {
+  if (deskId === 'PB1' || deskId === 'PB2') return 'phonebooth';
+  if (deskId === 'CONF') return 'conference';
+  return 'desk';
+}
+
+// Returns true if a reservation is active on the given weekday name
+function isActiveOnDay(r, dayName) {
+  const days = (r.days && r.days.length > 0) ? r.days : ALL_DAYS;
+  return days.includes(dayName);
+}
+
+function buildTimeline() {
+  const container = document.getElementById('timeline');
+  const dateEl = document.getElementById('dailyDate');
+  const summaryEl = document.getElementById('dailySummary');
+
+  const now = new Date();
+  const todayName = DAY_NAMES[now.getDay()];
+  const isWeekday = ALL_DAYS.includes(todayName);
+
+  dateEl.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+  // Gather today's reservations across all spaces
+  const todays = [];
+  for (const [desk, arr] of Object.entries(reservations)) {
+    if (!arr) continue;
+    for (const r of arr) {
+      if (!isActiveOnDay(r, todayName)) continue;
+      todays.push({
+        desk,
+        name: r.name,
+        spaceName: getSpaceName(desk),
+        barClass: spaceBarClass(desk),
+        start: timeToMinutes(r.startTime),
+        end: timeToMinutes(r.endTime),
+        startRaw: r.startTime,
+        endRaw: r.endTime
+      });
+    }
+  }
+
+  // Empty / weekend states
+  if (todays.length === 0) {
+    summaryEl.innerHTML = '';
+    container.innerHTML = `<div class="daily-empty">
+      <div class="daily-empty-icon">${isWeekday ? '\u{1F4C5}' : '\u{1F634}'}</div>
+      ${isWeekday
+        ? 'No one is scheduled in the office today.'
+        : "It's the weekend &mdash; no reservations scheduled."}
+    </div>`;
+    return;
+  }
+
+  const people = new Set(todays.map(t => t.name));
+  summaryEl.innerHTML = `<strong>${people.size}</strong> ${people.size === 1 ? 'person' : 'people'} in today across <strong>${todays.length}</strong> ${todays.length === 1 ? 'booking' : 'bookings'}.`;
+
+  // Determine timeline range (hour-aligned). Default 8am–6pm, expand to fit timed bookings.
+  let minH = 8, maxH = 18;
+  todays.forEach(t => {
+    if (t.start !== null) minH = Math.min(minH, Math.floor(t.start / 60));
+    if (t.end !== null) maxH = Math.max(maxH, Math.ceil(t.end / 60));
+  });
+  if (maxH - minH < 4) maxH = minH + 4;
+  const rangeStart = minH * 60;
+  const rangeEnd = maxH * 60;
+  const span = rangeEnd - rangeStart;
+  const totalHours = maxH - minH;
+
+  // Sort: all-day first, then by start time, then by name
+  todays.sort((a, b) => {
+    const sa = a.start === null ? -1 : a.start;
+    const sb = b.start === null ? -1 : b.start;
+    if (sa !== sb) return sa - sb;
+    return a.name.localeCompare(b.name);
+  });
+
+  // Axis hour labels
+  let axis = '<div class="tl-axis"><div class="tl-axis-spacer"></div><div class="tl-axis-track">';
+  for (let h = minH; h < maxH; h++) {
+    const ampm = h >= 12 ? 'p' : 'a';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    axis += `<div class="tl-hour">${h12}${ampm}</div>`;
+  }
+  axis += '</div></div>';
+
+  // Per-track gridlines (vertical line each hour)
+  const hourPct = 100 / totalHours;
+  const gridBg = `repeating-linear-gradient(to right, transparent 0, transparent calc(${hourPct}% - 1px), #f0f0f0 calc(${hourPct}% - 1px), #f0f0f0 ${hourPct}%)`;
+
+  // Rows
+  let rows = '<div class="tl-rows" id="tlRows">';
+  todays.forEach(t => {
+    let left, width, label;
+    if (t.start === null || t.end === null) {
+      left = 0; width = 100; label = 'All day';
+    } else {
+      const s = Math.max(t.start, rangeStart);
+      const e = Math.min(t.end, rangeEnd);
+      left = ((s - rangeStart) / span) * 100;
+      width = Math.max(((e - s) / span) * 100, 2);
+      label = `${formatTime(t.startRaw)} – ${formatTime(t.endRaw)}`;
+    }
+    rows += `<div class="tl-row">
+      <div class="tl-label">
+        <span class="tl-name" title="${t.name}">${t.name}</span>
+        <span class="tl-space">${t.spaceName}</span>
+      </div>
+      <div class="tl-track" style="background-image:${gridBg};">
+        <div class="tl-bar ${t.barClass}" style="left:${left}%;width:${width}%;" title="${label}">${label}</div>
+      </div>
+    </div>`;
+  });
+  rows += '</div>';
+
+  container.innerHTML = axis + rows;
+
+  // "Now" indicator (only on weekdays, within range)
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  if (isWeekday && nowMin >= rangeStart && nowMin <= rangeEnd) {
+    const frac = (nowMin - rangeStart) / span;
+    const nowLine = document.createElement('div');
+    nowLine.className = 'tl-now';
+    nowLine.style.left = `calc(var(--tl-label-w) + (100% - var(--tl-label-w)) * ${frac})`;
+    document.getElementById('tlRows').appendChild(nowLine);
+  }
 }
 
 // ── Event listeners ──
